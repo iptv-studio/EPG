@@ -1,15 +1,13 @@
 <?php
 /**
- * EPG 分类处理器
- * 目录结构优化版
+ * Ando EPG 分类处理器 - 根目录版
  */
 
-$inputBaseDir = __DIR__ . '/list/';
-$outputBaseDir = __DIR__ . '/EPG/';
+$inputBaseDir  = __DIR__ . '/list/';
+$outputBaseDir = __DIR__ . '/'; // 修改：直接输出到根目录
 
 ini_set('memory_limit', '1024M');
 
-// 定义分类
 $categories = ['CN', 'HK', 'TW'];
 
 foreach ($categories as $cat) {
@@ -23,6 +21,7 @@ foreach ($categories as $cat) {
         continue;
     }
 
+    // 确保根目录下的分类文件夹存在
     if (!is_dir($outputDir)) mkdir($outputDir, 0777, true);
 
     // 清理旧数据
@@ -39,7 +38,6 @@ foreach ($categories as $cat) {
         $xml = simplexml_load_file($file, 'SimpleXMLElement', LIBXML_NOCDATA | LIBXML_COMPACT);
         if (!$xml) continue;
 
-        // 频道 ID 转中文名映射
         if (isset($xml->channel)) {
             foreach ($xml->channel as $ch) {
                 $id = trim((string)$ch['id']);
@@ -48,7 +46,6 @@ foreach ($categories as $cat) {
             }
         }
 
-        // 提取节目
         if (isset($xml->programme)) {
             foreach ($xml->programme as $prog) {
                 $chId = trim((string)$prog['channel']);
@@ -65,7 +62,6 @@ foreach ($categories as $cat) {
         unset($xml);
     }
 
-    // 写入分类 JSON
     $fileCount = 0;
     foreach ($channels as $id => $progList) {
         $displayName = isset($channelNames[$id]) ? $channelNames[$id] : $id;
@@ -79,5 +75,5 @@ foreach ($categories as $cat) {
             $fileCount++;
         }
     }
-    echo "   ✅ 完成：在 EPG/$cat/ 下生成了 $fileCount 个文件。\n";
+    echo "   ✅ 完成：[$cat] 目录已更新。\n";
 }
