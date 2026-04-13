@@ -1,0 +1,65 @@
+name: Ando Studio EPG 自动化流水线
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # 北京时间每天 10:00 运行 (UTC 02:00)
+  workflow_dispatch: # 支持手动触发
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  epg-task:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TZ: Asia/Shanghai
+
+    steps:
+      - name: 1. 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 2. 环境初始化 (PHP)
+        # 如果你的 epg.php 不需要特定版本的 PHP，默认环境通常已内置
+        run: |
+          echo "Setting up PHP environment..."
+
+      - name: 3. 处理 EPG 拆分
+        run: |
+          echo "📅 正在启动 EPG 更新任务..."
+          mkdir -p list EPG
+          
+          # 下载新的 EPG 文件
+          curl -L "https://epg.iill.top/epg.xml.gz" -o list/x.xml.gz
+          
+          # 解压文件 (-f 强制覆盖, -k 保留原压缩包)
+          gunzip -fk list/x.xml.gz
+          
+          # 运行你的处理脚本
+          if [ -f "epg.php" ]; then
+            php epg.php
+          else
+            echo "❌ 错误: 找不到 epg.php 脚本"
+            exit 1
+          fi
+
+      - name: 4. 同步到仓库
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "Ando-Bot"
+          
+          # 添加相关文件
+          git add list/x.xml* 2>/dev/null || true
+          git add EPG/*.json 2>/dev/null || true
+          
+          if git diff --cached --quiet; then
+            echo "没有检测到 EPG 变动，跳过提交。"
+          else
+            git commit -m "Ando EPG Update: $(date '+%Y-%m-%d %H:%M')"
+            git pull --rebase --autostash origin main
+            git push origin main
+          fi
