@@ -1,8 +1,7 @@
 <?php
 /**
- * IPTV EPG 分类处理器
- * 1. 自动扫描 list/ 下的子目录 (CN, HK, TW)
- * 2. 在对应的 EPG/子目录 下生成中文名的 JSON
+ * EPG 分类处理器
+ * 目录结构优化版
  */
 
 $inputBaseDir = __DIR__ . '/list/';
@@ -10,7 +9,7 @@ $outputBaseDir = __DIR__ . '/EPG/';
 
 ini_set('memory_limit', '1024M');
 
-// 定义需要处理的分类目录
+// 定义分类
 $categories = ['CN', 'HK', 'TW'];
 
 foreach ($categories as $cat) {
@@ -19,34 +18,28 @@ foreach ($categories as $cat) {
 
     echo "📂 正在处理分类: [$cat]\n";
 
-    // 检查输入目录是否存在
     if (!is_dir($inputDir)) {
         echo "   ⚠️ 跳过：未找到输入目录 $inputDir\n";
         continue;
     }
 
-    // 确保输出子目录存在
     if (!is_dir($outputDir)) mkdir($outputDir, 0777, true);
 
-    // 清理该分类下的旧数据
-    array_map('unlink', glob($outputDir . '*.json'));
+    // 清理旧数据
+    $oldFiles = glob($outputDir . '*.json');
+    if (!empty($oldFiles)) array_map('unlink', $oldFiles);
 
-    // 获取该目录下的所有 XML
     $xmlFiles = glob($inputDir . '*.xml');
-    if (empty($xmlFiles)) {
-        echo "   ℹ️ 该目录下没有 XML 文件。\n";
-        continue;
-    }
+    if (empty($xmlFiles)) continue;
 
     $channels = [];
     $channelNames = [];
 
-    // 解析 XML
     foreach ($xmlFiles as $file) {
         $xml = simplexml_load_file($file, 'SimpleXMLElement', LIBXML_NOCDATA | LIBXML_COMPACT);
         if (!$xml) continue;
 
-        // 映射频道名
+        // 频道 ID 转中文名映射
         if (isset($xml->channel)) {
             foreach ($xml->channel as $ch) {
                 $id = trim((string)$ch['id']);
@@ -55,7 +48,7 @@ foreach ($categories as $cat) {
             }
         }
 
-        // 解析节目
+        // 提取节目
         if (isset($xml->programme)) {
             foreach ($xml->programme as $prog) {
                 $chId = trim((string)$prog['channel']);
@@ -72,14 +65,12 @@ foreach ($categories as $cat) {
         unset($xml);
     }
 
-    // 生成 JSON
+    // 写入分类 JSON
     $fileCount = 0;
     foreach ($channels as $id => $progList) {
         $displayName = isset($channelNames[$id]) ? $channelNames[$id] : $id;
         $safeName = str_replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], '_', trim($displayName));
-        if (empty($safeName)) $safeName = $id;
-
-        // 排序与去重
+        
         usort($progList, function($a, $b) { return strcmp($a['startTime'], $b['startTime']); });
         $progList = array_values(array_map("unserialize", array_unique(array_map("serialize", $progList))));
 
@@ -88,9 +79,5 @@ foreach ($categories as $cat) {
             $fileCount++;
         }
     }
-    echo "   ✅ 完成：生成了 $fileCount 个 JSON 文件。\n";
+    echo "   ✅ 完成：在 EPG/$cat/ 下生成了 $fileCount 个文件。\n";
 }
-
-echo "\n----------------------------------------------------\n";
-echo "🚀 所有任务执行完毕！时间: " . date('Y-m-d H:i:s') . "\n";
-echo "----------------------------------------------------\n";
