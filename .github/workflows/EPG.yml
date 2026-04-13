@@ -1,4 +1,4 @@
-name: Ando Studio EPG 自动化流水线
+name: IPTV Studio EPG
 
 on:
   schedule:
