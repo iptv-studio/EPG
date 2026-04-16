@@ -1,15 +1,14 @@
 <?php
 /**
- * Ando EPG 分类处理器 - 2026 全格式兼容版
- * 兼容标准 XML 格式与 loc.cc 的 JSON-in-XML 格式
+ * Ando EPG 分类处理器
  */
 
 $baseDir = __DIR__ . '/EPG/'; 
 ini_set('memory_limit', '1024M');
 date_default_timezone_set('Asia/Shanghai');
 
-// 工作流中下载的 4 个文件名
-$xmlFilesToProcess = ['cn.xml', 'hk.xml', 'tw.xml', 'pl.xml'];
+// --- 关键修改：增加 pl.xml ---
+$xmlFilesToProcess = ['cn.xml', 'hk.xml', 'tw.xml', 'all.xml', 'pl.xml'];
 
 $globalFileCount = 0;
 $filesPerFolder = 900;
@@ -106,7 +105,7 @@ foreach ($channels as $id => $progList) {
     $nameItem = trim($displayName);
     $aliases = [$nameItem];
     if (strcasecmp($nameItem, 'CCTV5+') === 0) {
-        $aliases[] = str_replace('+', 'plus', $nameItem);
+        $aliases[] = str_replace('+', 'Plus', $nameItem);
     }
 
     foreach ($aliases as $targetName) {
