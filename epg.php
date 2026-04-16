@@ -1,39 +1,42 @@
 <?php
 /**
- * IPTV EPG 分类处理器
+ * Ando EPG 分类处理器
+ * 功能：解析 XML/JSON EPG 数据，处理 Plus 别名，按原始名称分箱存储
  */
 
-// --- 动态路径修正 ---
-// 如果当前目录名已经是 EPG，就直接用当前目录；否则用当前目录下的 EPG/
-$currentDir = str_replace('\\', '/', dirname(__FILE__));
-if (substr($currentDir, -4) === '/EPG') {
-    $baseDir = $currentDir . '/';
+// --- 1. 动态路径修正逻辑 ---
+// 无论脚本是在根目录运行还是在 EPG 目录运行，都确保指向正确的输出文件夹
+$currentPath = str_replace('\\', '/', dirname(__FILE__));
+if (basename($currentPath) === 'EPG') {
+    $baseDir = $currentPath . '/';
 } else {
-    $baseDir = $currentDir . '/EPG/';
+    $baseDir = $currentPath . '/EPG/';
+}
+
+// 确保目录存在
+if (!is_dir($baseDir)) {
+    mkdir($baseDir, 0777, true);
 }
 
 ini_set('memory_limit', '1024M');
 date_default_timezone_set('Asia/Shanghai');
 
-if (!is_dir($baseDir)) {
-    mkdir($baseDir, 0777, true);
-}
-
-// 对应上面 YAML 生成的文件名
+// 对应 YAML 脚本中生成的解压文件名
 $xmlFilesToProcess = ['pl.xml', 'hk.xml', 'tw.xml'];
 $globalFileCount = 0;
 $filesPerFolder = 900; 
 
 echo "🚀 EPG 处理器启动...\n";
-echo "📂 目标目录: $baseDir\n";
+echo "📂 扫描目录: $baseDir\n";
 
 $channels = [];
 $channelNames = [];
 
+// --- 2. 解析逻辑 ---
 foreach ($xmlFilesToProcess as $fileName) {
     $filePath = $baseDir . $fileName;
     if (!file_exists($filePath)) {
-        echo "⚠️ 跳过不存在的文件：$fileName\n";
+        echo "⚠️ 跳过不存在的文件：$filePath\n";
         continue;
     }
 
@@ -43,6 +46,7 @@ foreach ($xmlFilesToProcess as $fileName) {
 
     $firstChar = substr(trim($content), 0, 1);
 
+    // 逻辑 A: 处理 JSON 格式 (针对某些 API 源)
     if ($firstChar === '{' || $firstChar === '[') {
         $data = json_decode($content, true);
         if ($data) {
@@ -62,10 +66,12 @@ foreach ($xmlFilesToProcess as $fileName) {
                 ];
             }
         }
-    } else {
-        $xml = simplexml_load_string($content, 'SimpleXMLElement', LIBXML_NOCDATA | LIBXML_COMPACT);
+    } 
+    // 逻辑 B: 处理标准 XMLTV 格式
+    else {
+        $xml = @simplexml_load_string($content, 'SimpleXMLElement', LIBXML_NOCDATA | LIBXML_COMPACT);
         if (!$xml) {
-            echo "❌ 无法解析 XML: $fileName\n";
+            echo "❌ 无法解析 XML 内容: $fileName\n";
             continue;
         }
 
@@ -94,12 +100,14 @@ foreach ($xmlFilesToProcess as $fileName) {
     unset($content, $xml, $data);
 }
 
-echo "⚙️ 正在写入分箱 JSON...\n";
+// --- 3. 写入 JSON 逻辑 ---
+echo "⚙️ 正在执行分箱逻辑并写入子目录...\n";
 
 foreach ($channels as $id => $progList) {
     $displayName = $channelNames[$id] ?? $id;
     if (empty($displayName)) continue;
 
+    // 排序与去重
     usort($progList, function($a, $b) {
         return strcmp($a['startTime'], $b['startTime']);
     });
@@ -109,16 +117,21 @@ foreach ($channels as $id => $progList) {
     $nameItem = trim($displayName);
     $targets = [$nameItem]; 
 
+    // 特殊处理：如果包含 + 号，自动增加一个 Plus 命名的文件版本
     if (strpos($nameItem, '+') !== false) {
         $targets[] = str_replace('+', 'Plus', $nameItem);
     }
 
     foreach ($targets as $targetName) {
+        // 计算分箱目录索引 (01, 02...)
         $folderIdx = str_pad(ceil(($globalFileCount + 1) / $filesPerFolder), 2, '0', STR_PAD_LEFT);
         $targetDir = $baseDir . $folderIdx . '/';
 
-        if (!is_dir($targetDir)) mkdir($targetDir, 0777, true);
+        if (!is_dir($targetDir)) {
+            mkdir($targetDir, 0777, true);
+        }
 
+        // 过滤系统非法字符，保持 + 号
         $safeFileName = str_replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], '_', $targetName);
         $fullPath = $targetDir . $safeFileName . '.json';
 
@@ -129,4 +142,5 @@ foreach ($channels as $id => $progList) {
 }
 
 echo "\n✨ 任务圆满完成！";
-echo "\n📊 总计生成文件: $globalFileCount 个\n";
+echo "\n📊 总计生成文件: $globalFileCount 个";
+echo "\n📂 根目录: $baseDir\n";
