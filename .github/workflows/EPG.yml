@@ -39,7 +39,7 @@ jobs:
           curl -Lfs "https://tv.mxdyeah.top/epgphp/t.xml.gz" -o EPG/cn.xml.gz
           curl -Lfs "https://raw.githubusercontent.com/taksssss/tv/refs/heads/main/epg/epgpw_hk.xml.gz" -o EPG/hk.xml.gz
           curl -Lfs "https://raw.githubusercontent.com/taksssss/tv/refs/heads/main/epg/epgpw_tw.xml.gz" -o EPG/tw.xml.gz
-          curl -Lfs "https://epg.cdn.loc.cc/xml/all.xml.gz" -o EPG/all.xml.gz
+          curl -Lfs "https://raw.githubusercontent.com/litiande03/epg/refs/heads/master/pl.xml.gz" -o EPG/pl.xml.gz
           
           # 4. 智能解压逻辑
           # 遍历所有下载的文件，判断是否为 gzip 格式，如果是则解压并改名
