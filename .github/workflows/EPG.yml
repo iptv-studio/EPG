@@ -27,48 +27,47 @@ jobs:
 
       - name: Preparation and Download
         run: |
-          # 安装 file 工具确保检测逻辑正常
-          sudo apt-get update && sudo apt-get install -y file
+          # 1. 彻底清理旧的 JSON 和 XML，防止脏数据干扰
+          # 注意：保留 EPG 根目录，但清空子目录
+          find EPG -mindepth 1 -maxdepth 2 -not -name ".gitkeep" -delete 2>/dev/null || true
+          mkdir -p EPG
 
-          # 1. 清理旧文件
-          rm -f EPG/*.xml
-          rm -f EPG/*.xml.gz
-          rm -f EPG/*.gz
-
-          # 2. 确保目录结构
-          mkdir -p EPG/{01..10}
+          # 2. 下载文件 (增加重试机制)
+          curl -Lfs --retry 3 "https://raw.githubusercontent.com/litiande031/epg/refs/heads/master/pl.xml.gz" -o EPG/pl.xml.gz
+          curl -Lfs --retry 3 "https://raw.githubusercontent.com/taksssss/tv/refs/heads/main/epg/epgpw_hk.xml.gz" -o EPG/hk.xml.gz
+          curl -Lfs --retry 3 "https://raw.githubusercontent.com/taksssss/tv/refs/heads/main/epg/epgpw_tw.xml.gz" -o EPG/tw.xml.gz
           
-          # 3. 下载文件
-          curl -Lfs "https://raw.githubusercontent.com/litiande031/epg/refs/heads/master/pl.xml.gz" -o EPG/pl.xml.gz
-          curl -Lfs "https://raw.githubusercontent.com/taksssss/tv/refs/heads/main/epg/epgpw_hk.xml.gz" -o EPG/hk.xml.gz
-          curl -Lfs "https://raw.githubusercontent.com/taksssss/tv/refs/heads/main/epg/epgpw_tw.xml.gz" -o EPG/tw.xml.gz
-          
-          # 4. 智能解压逻辑
-          for f in EPG/*.xml.gz; do
-            if file "$f" | grep -q 'gzip compressed'; then
-              echo "Unzipping $f..."
-              gunzip -fk "$f"
+          # 3. 智能解压并重命名为 PHP 识别的文件名
+          for f in EPG/*.gz; do
+            if gzip -t "$f" 2>/dev/null; then
+              echo "Decompressing $f..."
+              gunzip -c "$f" > "EPG/$(basename "${f%.gz}" | sed 's/epgpw_//')".xml
             else
-              echo "$f is not a gzip, renaming..."
-              mv "$f" "${f%.gz}"
-              cp "${f%.gz}" "$f"
+              echo "Warning: $f is not a valid gzip, trying direct rename..."
+              mv "$f" "EPG/$(basename "${f%.gz}" | sed 's/epgpw_//')".xml
             fi
           done
 
       - name: Run EPG Processor
-        run: php epg.php
+        run: |
+          # 确保 PHP 脚本有执行权限，并执行
+          php epg.php
 
       - name: Deploy to Repository
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
 
-          git add EPG/
-          git pull origin main --rebase --autostash
+          # 这里的关键是先 add 再判断，防止文件太多导致 status 极慢
+          git add EPG/*.json
+          
+          # 排除掉下载的原始 XML 文件，只提交处理后的 JSON
+          git rm -f EPG/*.xml 2>/dev/null || true
 
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "Update EPG: $(date +'%Y-%m-%d %H:%M')"
-            git push origin main
+            git commit -m "Update EPG: $(date +'%Y-%m-%d %H:%M') [skip ci]"
+            # 增加推送重试，防止网络波动
+            for i in {1..3}; do git push origin main && break || sleep 5; done
           fi
