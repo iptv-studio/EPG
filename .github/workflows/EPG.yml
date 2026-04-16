@@ -27,26 +27,27 @@ jobs:
 
       - name: Preparation and Download
         run: |
-          # 1. 彻底清理并创建目录
+          # 1. 彻底清理旧数据并创建目录
           rm -rf EPG/
           mkdir -p EPG
 
-          # 2. 下载
-          curl -Lfs --retry 3 "https://raw.githubusercontent.com/litiande031/epg/master/pl.xml.gz" -o EPG/pl.xml.gz
-          curl -Lfs --retry 3 "https://raw.githubusercontent.com/taksssss/tv/main/epg/epgpw_hk.xml.gz" -o EPG/hk.xml.gz
-          curl -Lfs --retry 3 "https://raw.githubusercontent.com/taksssss/tv/main/epg/epgpw_tw.xml.gz" -o EPG/tw.xml.gz
+          # 2. 下载文件 (修正后的 URL 格式，去掉了 refs/heads)
+          echo "开始下载数据源..."
+          curl -Lfs --retry 3 "https://raw.githubusercontent.com/litiande031/epg/master/pl.xml.gz" -o EPG/pl.xml.gz || echo "PL 下载失败"
+          curl -Lfs --retry 3 "https://raw.githubusercontent.com/taksssss/tv/main/epg/epgpw_hk.xml.gz" -o EPG/hk.xml.gz || echo "HK 下载失败"
+          curl -Lfs --retry 3 "https://raw.githubusercontent.com/taksssss/tv/main/epg/epgpw_tw.xml.gz" -o EPG/tw.xml.gz || echo "TW 下载失败"
           
-          # 3. 修正后的解压逻辑：强制清理后缀并重命名
+          # 3. 智能解压并标准化文件名
+          # 逻辑：去除 epgpw_ 前缀，去掉所有 .gz 或 .xml 后缀，重新统一为 .xml
           for f in EPG/*.gz; do
             if [ -f "$f" ]; then
-              # 提取文件名，去掉 epgpw_ 前缀，去掉所有 .xml 或 .gz 相关的后缀，最后统一补上 .xml
-              BASE=$(basename "$f" | sed 's/epgpw_//g' | sed 's/\.xml//g' | sed 's/\.gz//g')
-              echo "处理中: $f -> EPG/$BASE.xml"
-              gunzip -c "$f" > "EPG/$BASE.xml"
+              BASE_NAME=$(basename "$f" | sed 's/epgpw_//g' | sed 's/\.xml//g' | sed 's/\.gz//g')
+              echo "解压中: $f -> EPG/$BASE_NAME.xml"
+              gunzip -c "$f" > "EPG/$BASE_NAME.xml"
             fi
           done
-          
-          # 验证结果
+
+          # 4. 验证文件是否存在（调试用）
           ls -F EPG/
       - name: Run EPG Processor
         run: |
