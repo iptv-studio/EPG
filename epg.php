@@ -1,20 +1,24 @@
 <?php
 /**
  * IPTV EPG 分类处理器
- * 功能：解析 XML/JSON EPG 数据，处理 Plus 别名，按原始名称分箱存储为 JSON
  */
 
-$baseDir = __DIR__ . '/EPG/'; 
+// 强制定位到脚本所在目录下的 EPG 文件夹
+$baseDir = dirname(__FILE__) . '/EPG/'; 
 ini_set('memory_limit', '1024M');
 date_default_timezone_set('Asia/Shanghai');
 
-// 待处理的文件列表（对应 YAML 解压后的文件名）
-$xmlFilesToProcess = ['pl.xml', 'hk.xml', 'tw.xml'];
+// 确保 EPG 根目录存在
+if (!is_dir($baseDir)) {
+    mkdir($baseDir, 0777, true);
+}
 
+$xmlFilesToProcess = ['pl.xml', 'hk.xml', 'tw.xml'];
 $globalFileCount = 0;
 $filesPerFolder = 900; 
 
 echo "🚀 EPG 处理器启动...\n";
+echo "📂 目标目录: $baseDir\n";
 
 $channels = [];
 $channelNames = [];
@@ -32,7 +36,6 @@ foreach ($xmlFilesToProcess as $fileName) {
 
     $firstChar = substr(trim($content), 0, 1);
 
-    // --- 逻辑 A: 处理 JSON 格式 ---
     if ($firstChar === '{' || $firstChar === '[') {
         $data = json_decode($content, true);
         if ($data) {
@@ -52,9 +55,7 @@ foreach ($xmlFilesToProcess as $fileName) {
                 ];
             }
         }
-    } 
-    // --- 逻辑 B: 处理标准 XML 格式 ---
-    else {
+    } else {
         $xml = simplexml_load_string($content, 'SimpleXMLElement', LIBXML_NOCDATA | LIBXML_COMPACT);
         if (!$xml) {
             echo "❌ 无法解析 XML: $fileName\n";
@@ -86,14 +87,12 @@ foreach ($xmlFilesToProcess as $fileName) {
     unset($content, $xml, $data);
 }
 
-// --- 写入 JSON 逻辑 ---
-echo "⚙️ 正在执行分箱逻辑并写入子目录...\n";
+echo "⚙️ 正在写入分箱 JSON...\n";
 
 foreach ($channels as $id => $progList) {
     $displayName = $channelNames[$id] ?? $id;
     if (empty($displayName)) continue;
 
-    // 排序与去重
     usort($progList, function($a, $b) {
         return strcmp($a['startTime'], $b['startTime']);
     });
@@ -103,7 +102,6 @@ foreach ($channels as $id => $progList) {
     $nameItem = trim($displayName);
     $targets = [$nameItem]; 
 
-    // 处理 + 到 Plus 的转换
     if (strpos($nameItem, '+') !== false) {
         $targets[] = str_replace('+', 'Plus', $nameItem);
     }
