@@ -27,31 +27,32 @@ jobs:
 
       - name: Preparation and Download
         run: |
-          # 1. 确保目录干净且存在
+          # 确保目录干净且存在
           rm -rf EPG/
           mkdir -p EPG
 
-          # 2. 下载数据源 (使用 -L 处理重定向, -f 遇错停止)
           echo "正在下载远程 EPG 数据..."
-          curl -Lfs --retry 3 "https://epg.catvod.com/epg.xml.gz" -o EPG/epg.xml.gz || echo "epg 下载失败"
+          # 下载 XML 格式的源 (添加 -o EPG/epg.xml)
+          curl -Lfs --retry 3 "https://epg.catvod.com/epg.xml" -o EPG/epg.xml || echo "epg.xml 下载失败"
+          
+          # 下载 GZ 压缩格式的源
           curl -Lfs --retry 3 "https://raw.githubusercontent.com/taksssss/tv/main/epg/epgpw_hk.xml.gz" -o EPG/hk.xml.gz || echo "HK 下载失败"
           curl -Lfs --retry 3 "https://raw.githubusercontent.com/taksssss/tv/main/epg/epgpw_tw.xml.gz" -o EPG/tw.xml.gz || echo "TW 下载失败"
           
-          # 3. 自动解压所有下载的 gz 文件
-          # 逻辑：解压为同名 .xml 文件，并删除原始压缩包以节省空间
-          echo "正在解压数据..."
-          for f in EPG/*.gz; do
-            if [ -f "$f" ]; then
-              # 获取不含扩展名的文件名 (例如 EPG/hk)
+          echo "正在统一处理解压逻辑..."
+          # 遍历所有下载的文件，如果是 .gz 就解压，如果已经是 .xml 则保持原样
+          for f in EPG/*; do
+            if [[ "$f" == *.gz ]]; then
               base=$(echo "$f" | sed 's/\.xml\.gz//')
               gunzip -c "$f" > "${base}.xml"
               rm "$f"
-              echo "已完成: $f -> ${base}.xml"
+              echo "已解压并清理: $f"
             fi
           done
 
-          # 4. 调试：列出文件确保 pl.xml, hk.xml, tw.xml, e9.xml 都在位
-          ls -R EPG/
+          # 最终目录清单
+          ls -lh EPG/
+          
       - name: Run EPG Processor
         run: |
           # 确保 EPG 目录干净且存在
