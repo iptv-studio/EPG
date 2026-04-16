@@ -50,32 +50,29 @@ jobs:
 
       - name: Run EPG Processor
         run: |
-          # 确保 PHP 脚本有执行权限，并执行
+          # 确保 EPG 目录干净且存在
+          mkdir -p EPG
           php epg.php
+          # 关键调试步骤：在日志里列出到底生成了什么
+          ls -R EPG/
 
       - name: Deploy to Repository
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
 
-          # 1. 检查 EPG 目录下到底有没有生成 json 文件（用于调试）
-          echo "检查生成的 JSON 文件列表："
-          find EPG -name "*.json" | head -n 5
-
-          # 2. 尝试添加所有变更
-          # 使用 git add -A 会自动处理新增、修改和删除，且不会因为找不到匹配而报错
-          git add -A EPG/
-
-          # 3. 排除下载的原始 XML 文件，我们不希望把大文件存进仓库
-          git rm --cached EPG/*.xml 2>/dev/null || true
-          git rm --cached EPG/*.gz 2>/dev/null || true
-
-          # 4. 提交并推送
+          # 1. 先把所有新生成的 JSON 文件夹加进去
+          git add EPG/
+          
+          # 2. 强制删掉不需要提交的原始大文件（XML/GZ）
+          # 这样仓库里就只有干净的 01/ 02/ 目录
+          find EPG -maxdepth 1 -name "*.xml" -delete
+          find EPG -maxdepth 1 -name "*.gz" -delete
+          
+          # 3. 提交变更
           if git diff --staged --quiet; then
-            echo "没有检测到任何变更，跳过提交。"
+            echo "No changes to commit"
           else
             git commit -m "Update EPG: $(date +'%Y-%m-%d %H:%M') [skip ci]"
-            # 使用 rebase 模式推送，防止多人协作冲突
-            git pull origin main --rebase
             git push origin main
           fi
