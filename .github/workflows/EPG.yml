@@ -27,61 +27,58 @@ jobs:
 
       - name: Preparation and Download
         run: |
-          # 确保目录干净且存在
+          # 步骤 1：执行前清理（物理删除旧的 EPG 目录重新开始）
           rm -rf EPG/
           mkdir -p EPG
           
-          # 下载 GZ 压缩格式的源
-          curl -Lfs --retry 3 "https://tv.mxdyeah.top/epgphp/t.xml.gz" -o EPG/t.xml.gz || echo "T 下载失败"
-          curl -Lfs --retry 3 "https://raw.githubusercontent.com/litiande03/epg/refs/heads/master/pl.xml.gz" -o EPG/pl.xml.gz || echo "PL 下载失败"
-          curl -Lfs --retry 3 "https://raw.githubusercontent.com/taksssss/tv/main/epg/epgpw_hk.xml.gz" -o EPG/hk.xml.gz || echo "HK 下载失败"
-          curl -Lfs --retry 3 "https://raw.githubusercontent.com/taksssss/tv/main/epg/epgpw_tw.xml.gz" -o EPG/tw.xml.gz || echo "TW 下载失败"
+          # 下载源
+          curl -Lfs --retry 3 "https://tv.mxdyeah.top/epgphp/t.xml.gz" -o EPG/t.xml.gz || echo "T failed"
+          curl -Lfs --retry 3 "https://raw.githubusercontent.com/litiande03/epg/refs/heads/master/pl.xml.gz" -o EPG/pl.xml.gz || echo "PL failed"
+          curl -Lfs --retry 3 "https://raw.githubusercontent.com/taksssss/tv/main/epg/epgpw_hk.xml.gz" -o EPG/hk.xml.gz || echo "HK failed"
+          curl -Lfs --retry 3 "https://raw.githubusercontent.com/taksssss/tv/main/epg/epgpw_tw.xml.gz" -o EPG/tw.xml.gz || echo "TW failed"
+          curl -Lfs --retry 3 "https://raw.githubusercontent.com/yenkj/epg/refs/heads/main/boss.xml" -o EPG/boss.xml || echo "BOSS failed"
           
-          # 新增：下载 boss.xml (注意这个源是 .xml 结尾，不是 .gz)
-          curl -Lfs --retry 3 "https://raw.githubusercontent.com/yenkj/epg/refs/heads/main/boss.xml" -o EPG/boss.xml || echo "BOSS 下载失败"          
-          
-          echo "正在统一处理解压逻辑..."
-          # 遍历所有下载的文件，如果是 .gz 就解压，如果已经是 .xml 则保持原样
-          for f in EPG/*; do
-            if [[ "$f" == *.gz ]]; then
-              base=$(echo "$f" | sed 's/\.xml\.gz//')
-              gunzip -c "$f" > "${base}.xml"
-              rm "$f"
-              echo "已解压并清理: $f"
-            fi
+          # 解压前先备份一份 gz（如果需要保存原始压缩包）
+          mkdir -p raw_backup
+          cp EPG/*.gz raw_backup/ 2>/dev/null || true
+          cp EPG/boss.xml raw_backup/ 2>/dev/null || true
+
+          # 执行解压
+          for f in EPG/*.gz; do
+            [ -e "$f" ] || continue
+            gunzip -f "$f"
           done
 
-          # 最终目录清单
-          ls -lh EPG/
-          
       - name: Run EPG Processor
         run: |
-          # 确保 EPG 目录干净且存在
-          mkdir -p EPG
+          # 运行 PHP 脚本，生成 JSON 分箱
           php epg.php
-          # 关键调试步骤：在日志里列出到底生成了什么
-          ls -R EPG/
 
-      - name: Deploy to Repository
+      - name: Deploy JSON to Repository
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
 
-          # 1. 把新生成的 JSON 文件夹加进去
+          # 关键操作：在 git add 之前，把不想进仓库的大文件移走
+          # 这样 git 就不会追踪这些几百 MB 的 XML 了
+          mkdir -p ../temp_xmls
+          mv EPG/*.xml ../temp_xmls/ 2>/dev/null || true
+
           git add EPG/
           
-          # 2. 强制删掉不需要提交的原始大文件（XML/GZ）
-          find EPG -maxdepth 1 -name "*.xml" -delete
-          find EPG -maxdepth 1 -name "*.gz" -delete
-          
-          # 3. 提交变更并处理远程冲突
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
             git commit -m "Update EPG: $(date +'%Y-%m-%d %H:%M') [skip ci]"
-            
-            # 关键修正：在 push 之前先拉取远程更新并变基，避免版本冲突
             git pull --rebase origin main
-            
             git push origin main
           fi
+
+      # 步骤 2：执行完后保存 XML 和 GZ 作为 Action 产物 (保留 90 天)
+      - name: Upload Raw XMLs
+        uses: actions/upload-artifact@v4
+        with:
+          name: raw-epg-files
+          path: |
+            raw_backup/
+            ../temp_xmls/
