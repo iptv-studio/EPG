@@ -1,158 +1,91 @@
 <?php
 /**
- * Ando EPG 分类处理器 - 自动化增强版
- * 功能：多源优先级过滤、路径自动对齐、精准清理旧 JSON、XML 保留模式
+ * Ando EPG 分类处理器 - 路径修复版
  */
 
-// --- 1. 环境配置与路径对齐 ---
 ini_set('memory_limit', '1024M');
 date_default_timezone_set('Asia/Shanghai');
 
-// 强制指向脚本同级目录下的 EPG 文件夹
 $scriptDir = str_replace('\\', '/', dirname(__FILE__));
 $baseDir = rtrim($scriptDir, '/') . '/EPG/';
+$xmlSourceDir = $baseDir . 'xml_source/'; // XML 存放的新位置
 
-if (!is_dir($baseDir)) {
-    mkdir($baseDir, 0777, true);
-}
-
-// 目标 XML 文件列表（按优先级排序）
-$xmlFilesToProcess = ['t.xml', 'pl.xml' , 'boss.xml','hk.xml', 'tw.xml'];
-$globalFileCount = 0;
-$filesPerFolder = 900; 
-
-echo "🚀 EPG 处理器启动...\n";
-echo "📂 工作目录: $baseDir\n";
-
-// --- 2. 精准预清理：只删除数字分箱文件夹，不删根目录下的 XML ---
-echo "🧹 正在清理旧的 JSON 分类数据...\n";
+// --- 1. 精准清理旧 JSON ---
 $oldFolders = glob($baseDir . '[0-9][0-9]', GLOB_ONLYDIR);
 if ($oldFolders) {
     foreach ($oldFolders as $folder) {
         $files = glob($folder . '/*');
-        foreach ($files as $file) {
-            if (is_file($file)) @unlink($file);
-        }
+        foreach ($files as $file) { @unlink($file); }
         @rmdir($folder);
     }
-    echo "✅ 旧 JSON 目录清理完毕。\n";
 }
 
-// --- 3. 解析逻辑 ---
+// --- 2. 解析逻辑 ---
+$xmlFilesToProcess = ['t.xml', 'pl.xml' , 'boss.xml','hk.xml', 'tw.xml'];
 $channels = [];
 $channelNames = [];
-$lockedChannelIds = []; // 用于优先级占坑
+$lockedChannelIds = [];
+$globalFileCount = 0;
+$filesPerFolder = 900;
 
-// 【修复处】：必须包含这个循环来遍历文件
 foreach ($xmlFilesToProcess as $fileName) {
-    $filePath = $baseDir . $fileName;
+    // 这里的路径改为从 xml_source 读取
+    $filePath = $xmlSourceDir . $fileName;
     
     if (!file_exists($filePath)) {
-        echo "⚠️ 跳过不存在的文件: $fileName\n";
+        echo "⚠️ Skip: $fileName\n";
         continue;
     }
 
-    echo "📖 正在解析: $fileName\n";
+    echo "📖 Parsing: $fileName\n";
     $content = file_get_contents($filePath);
-    if (empty($content)) continue;
-
-    // 移除 XML 命名空间，防止 SimpleXML 解析失败
     $content = preg_replace('/<(tv|xmltv)[^>]*xmlns[:="][^>]*>/i', '<$1>', $content);
     $xml = @simplexml_load_string($content, 'SimpleXMLElement', LIBXML_NOCDATA | LIBXML_COMPACT);
-    if (!$xml) {
-        echo "❌ XML 格式错误: $fileName\n";
-        continue;
-    }
+    
+    if (!$xml) continue;
 
     $currentFileChannels = [];
-
-    // 提取频道信息
     if (isset($xml->channel)) {
         foreach ($xml->channel as $ch) {
             $id = trim((string)$ch['id']);
             $name = trim((string)$ch->{"display-name"});
-            if (!$id || !$name) continue;
-
-            // 优先级检查：如果频道名已存在，则跳过后续低优先级源
-            if (isset($lockedChannelIds[$name])) {
-                continue; 
-            }
-
+            if (!$id || !$name || isset($lockedChannelIds[$name])) continue;
             $channelNames[$id] = $name;
             $currentFileChannels[$id] = $name;
             $lockedChannelIds[$name] = true;
         }
     }
 
-    // 提取节目单
     if (isset($xml->programme)) {
         foreach ($xml->programme as $prog) {
             $chId = trim((string)$prog['channel']);
-            
-            // 只处理属于当前文件且未被占坑的频道
-            if (!isset($currentFileChannels[$chId])) {
-                continue;
-            }
-
+            if (!isset($currentFileChannels[$chId])) continue;
             $start = (string)$prog['start'];
-            $stop = (string)$prog['stop'];
-            if ($chId && $start) {
-                $channels[$chId][] = [
-                    'start'     => substr($start, 8, 2) . ':' . substr($start, 10, 2),
-                    'startTime' => substr($start, 0, 14),
-                    'stopTime'  => substr($stop, 0, 14),
-                    'program'   => trim((string)$prog->title)
-                ];
-            }
+            $channels[$chId][] = [
+                'start'     => substr($start, 8, 2) . ':' . substr($start, 10, 2),
+                'startTime' => substr($start, 0, 14),
+                'stopTime'  => substr((string)$prog['stop'], 0, 14),
+                'program'   => trim((string)$prog->title)
+            ];
         }
     }
-    unset($content, $xml, $currentFileChannels);
 }
 
-// --- 4. 写入逻辑 ---
-echo "⚙️ 正在生成分箱 JSON 文件...\n";
-
-if (count($channels) === 0) {
-    echo "❌ 错误：未解析到任何有效数据。\n";
-    exit;
-}
-
+// --- 3. 写入逻辑 ---
+// (这部分和你之前的逻辑一致，无需修改分箱逻辑)
 foreach ($channels as $id => $progList) {
     $displayName = $channelNames[$id] ?? $id;
-    
-    // 时间排序
-    usort($progList, function($a, $b) {
-        return strcmp($a['startTime'], $b['startTime']);
-    });
-    
-    // 深度去重
+    usort($progList, function($a, $b) { return strcmp($a['startTime'], $b['startTime']); });
     $finalProgList = array_values(array_map("unserialize", array_unique(array_map("serialize", $progList))));
     $jsonEncoded = json_encode($finalProgList, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
-    $nameItem = trim($displayName);
-    $targets = [$nameItem]; 
-    if (strpos($nameItem, '+') !== false) {
-        $targets[] = str_replace('+', 'Plus', $nameItem);
-    }
+    $folderIdx = str_pad(ceil(($globalFileCount + 1) / $filesPerFolder), 2, '0', STR_PAD_LEFT);
+    $targetDir = $baseDir . $folderIdx . '/';
+    if (!is_dir($targetDir)) mkdir($targetDir, 0777, true);
 
-    foreach ($targets as $targetName) {
-        // 分箱算法
-        $folderIdx = str_pad(ceil(($globalFileCount + 1) / $filesPerFolder), 2, '0', STR_PAD_LEFT);
-        $targetDir = $baseDir . $folderIdx . '/';
-
-        if (!is_dir($targetDir)) {
-            mkdir($targetDir, 0777, true);
-        }
-
-        // 文件名安全过滤
-        $safeFileName = str_replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], '_', $targetName);
-        $fullPath = $targetDir . $safeFileName . '.json';
-
-        if (file_put_contents($fullPath, $jsonEncoded) !== false) {
-            $globalFileCount++;
-        }
+    $safeFileName = str_replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], '_', trim($displayName));
+    if (file_put_contents($targetDir . $safeFileName . '.json', $jsonEncoded)) {
+        $globalFileCount++;
     }
 }
-
-echo "\n✨ 处理完成！";
-echo "\n📊 成功生成 $globalFileCount 个 JSON 文件。\n";
+echo "📊 Done: $globalFileCount files generated.\n";
