@@ -1,7 +1,7 @@
 <?php
 /**
  * Ando EPG 分类处理器 - 自动化增强版
- * 功能：多源优先级过滤、路径自动对齐、旧数据物理清理
+ * 功能：多源优先级过滤、路径自动对齐、精准清理旧 JSON、XML 保留模式
  */
 
 // --- 1. 环境配置与路径对齐 ---
@@ -16,7 +16,7 @@ if (!is_dir($baseDir)) {
     mkdir($baseDir, 0777, true);
 }
 
-// 目标 XML 文件列表（按优先级排序，靠前的优先占坑）
+// 目标 XML 文件列表（按优先级排序）
 $xmlFilesToProcess = ['t.xml', 'pl.xml' , 'boss.xml','hk.xml', 'tw.xml'];
 $globalFileCount = 0;
 $filesPerFolder = 900; 
@@ -24,22 +24,26 @@ $filesPerFolder = 900;
 echo "🚀 EPG 处理器启动...\n";
 echo "📂 工作目录: $baseDir\n";
 
-// --- 2. 预清理：删除旧的分箱文件夹 (防止 Git 状态混乱) ---
-echo "🧹 正在清理旧的 JSON 数据...\n";
+// --- 2. 精准预清理：只删除数字分箱文件夹，不删根目录下的 XML ---
+echo "🧹 正在清理旧的 JSON 分类数据...\n";
 $oldFolders = glob($baseDir . '[0-9][0-9]', GLOB_ONLYDIR);
-foreach ($oldFolders as $folder) {
-    $files = glob($folder . '/*.json');
-    foreach ($files as $file) {
-        @unlink($file);
+if ($oldFolders) {
+    foreach ($oldFolders as $folder) {
+        $files = glob($folder . '/*');
+        foreach ($files as $file) {
+            if (is_file($file)) @unlink($file);
+        }
+        @rmdir($folder);
     }
-    @rmdir($folder);
+    echo "✅ 旧 JSON 目录清理完毕。\n";
 }
 
 // --- 3. 解析逻辑 ---
 $channels = [];
 $channelNames = [];
-$lockedChannelIds = []; // 用于优先级过滤：频道名 => 是否已占用
+$lockedChannelIds = []; // 用于优先级占坑
 
+// 【修复处】：必须包含这个循环来遍历文件
 foreach ($xmlFilesToProcess as $fileName) {
     $filePath = $baseDir . $fileName;
     
@@ -69,7 +73,7 @@ foreach ($xmlFilesToProcess as $fileName) {
             $name = trim((string)$ch->{"display-name"});
             if (!$id || !$name) continue;
 
-            // 优先级检查：如果频道名已存在，则跳过后续低优先级源中的同名频道
+            // 优先级检查：如果频道名已存在，则跳过后续低优先级源
             if (isset($lockedChannelIds[$name])) {
                 continue; 
             }
@@ -85,6 +89,7 @@ foreach ($xmlFilesToProcess as $fileName) {
         foreach ($xml->programme as $prog) {
             $chId = trim((string)$prog['channel']);
             
+            // 只处理属于当前文件且未被占坑的频道
             if (!isset($currentFileChannels[$chId])) {
                 continue;
             }
@@ -108,7 +113,7 @@ foreach ($xmlFilesToProcess as $fileName) {
 echo "⚙️ 正在生成分箱 JSON 文件...\n";
 
 if (count($channels) === 0) {
-    echo "❌ 错误：未解析到任何有效数据，请检查 XML 文件内容。\n";
+    echo "❌ 错误：未解析到任何有效数据。\n";
     exit;
 }
 
@@ -131,7 +136,7 @@ foreach ($channels as $id => $progList) {
     }
 
     foreach ($targets as $targetName) {
-        // 分箱算法：每 900 个文件存入一个新目录
+        // 分箱算法
         $folderIdx = str_pad(ceil(($globalFileCount + 1) / $filesPerFolder), 2, '0', STR_PAD_LEFT);
         $targetDir = $baseDir . $folderIdx . '/';
 
