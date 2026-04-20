@@ -58,15 +58,22 @@ jobs:
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-
-          # 关键：只 add 生成后的 JSON 数据文件夹
-          git add EPG/[0-9][0-9]/
           
+          # 1. 先把所有变更添加到暂存区（包括删除的文件）
+          git add EPG/
+          
+          # 2. 检查是否有文件变动
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
+            # 3. 先提交本地变更
             git commit -m "Update EPG: $(date +'%Y-%m-%d %H:%M') [skip ci]"
-            git pull --rebase origin main
+            
+            # 4. 采用拉取并自动处理冲突的策略
+            # 使用 -X theirs 可以在冲突时优先保留本次生成的最新 EPG 数据
+            git pull --rebase -X theirs origin main
+            
+            # 5. 推送
             git push origin main
           fi
 
