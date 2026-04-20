@@ -10,16 +10,22 @@ on:
 permissions:
   contents: write
 
+# 在全局或 Job 级别强制指定 Node.js 24 运行环境，消除 Node 20 警告
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   update-epg:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
+        # 使用 v4 标签，GitHub 会自动拉取 v4 系列中修复了 Node 兼容性的最新小版本
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Setup PHP
+        # shivammathur/setup-php 社区更新非常快，确保使用 v2 的最新状态
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
@@ -53,8 +59,7 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
 
-          # 关键：我们只 add JSON 文件夹，不 add xml_source 文件夹
-          # 这样 XML 就不会进入 Git 历史
+          # 关键：只 add 生成后的 JSON 数据文件夹
           git add EPG/[0-9][0-9]/
           
           if git diff --staged --quiet; then
@@ -66,8 +71,8 @@ jobs:
           fi
 
       - name: Upload Raw XMLs
+        # upload-artifact@v4 已原生支持新环境
         uses: actions/upload-artifact@v4
         with:
           name: raw-epg-files
-          # 现在的路径在 EPG 内部，不再使用 ../ 寻址
           path: EPG/xml_source/
