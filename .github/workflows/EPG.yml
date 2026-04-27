@@ -43,7 +43,10 @@ jobs:
           curl -Lfs --retry 3 "https://raw.githubusercontent.com/taksssss/tv/main/epg/epgpw_hk.xml.gz" -o EPG/xml_source/hk.xml.gz || echo "HK failed"
           curl -Lfs --retry 3 "https://raw.githubusercontent.com/taksssss/tv/main/epg/epgpw_tw.xml.gz" -o EPG/xml_source/tw.xml.gz || echo "TW failed"
           
-          # 解压
+          # 新增：下载 xmltv.xml (注意这个源是未压缩的 xml，所以直接保存为 .xml)
+          curl -Lfs --retry 3 "https://iptv.707626.xyz/api/epg/xmltv.xml" -o EPG/xml_source/xmltv.xml || echo "xmltv failed"
+          
+          # 解压（循环会自动忽略非 .gz 后缀的文件，因此不会报错）
           for f in EPG/xml_source/*.gz; do
             [ -e "$f" ] || continue
             gunzip -f "$f"
