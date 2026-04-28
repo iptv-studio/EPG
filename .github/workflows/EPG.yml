@@ -65,22 +65,18 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           
-          # 1. 暂存所有更改
-          git add EPG/
+          # 【修改点】只暂存你真正需要的 EPG 结果文件（假设在 EPG/ 目录下，但排除 xml_source）
+          # 如果你的 epg.php 生成的文件在 EPG/ 根目录，可以这样：
+          git add EPG/*.xml 2>/dev/null || echo "No handled xml"
+          # 或者明确排除原始源文件夹：
+          git rm -r --cached EPG/xml_source/ || echo "Already clean"
           
-          # 2. 检查是否有变动
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            # 3. 提交本地更改
             git commit -m "Update EPG: $(date +'%Y-%m-%d %H:%M') [skip ci]"
-            
-            # 4. 暴力同步：拉取远程分支，如果冲突则强制以本地(我们的新数据)为准
-            # 这种方式比 rebase 在自动化环境中更可靠
             git fetch origin main
             git merge -X ours origin/main --allow-unrelated-histories || echo "Merge conflict handled"
-            
-            # 5. 推送
             git push origin main
           fi
 
